@@ -1,0 +1,14 @@
+# cmake files
+CMakeFiles/
+CMakeCache.txt
+cmake_install.cmake
+Makefile
+
+# build files
+eboot.bin
+eboot.bin.out
+simulation
+simulation.velf
+simulation.vpk
+simulation.vpk.out
+simulation.vpk_param.sfo
