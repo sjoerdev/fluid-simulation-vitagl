@@ -1,6 +1,8 @@
 #include <vector>
 #include <random>
 #include <chrono>
+#include <algorithm>
+
 #include <stdio.h>
 #include <string.h>
 
@@ -27,6 +29,7 @@ uint32_t buttons_last = 0;
 
 // other
 uint32_t* vitagl_display_framebuf;
+int MAX_NEIGHBORS = 10;
 
 // opengl
 GLuint vao;
@@ -144,7 +147,7 @@ void BuildGrid()
     }
 }
 
-vector<int> GetNeighbors(const Particle& p)
+vector<int> GetAllNeighbors(const Particle& p)
 {
     vector<int> neighbors;
     ivec2 cell = GetCell(p.position);
@@ -159,6 +162,44 @@ vector<int> GetNeighbors(const Particle& p)
             neighbors.insert(neighbors.end(), cellParticles.begin(), cellParticles.end());
         }
     }
+    return neighbors;
+}
+
+vector<int> GetNearNeighbors(Particle& particle)
+{
+    // neighbour candidates with distance encoded
+    vector<pair<float, int>> candidates;
+    candidates.reserve(MAX_NEIGHBORS * 2);
+
+    ivec2 cell = GetCell(particle.position);
+
+    for (int dx = -1; dx <= 1; ++dx)
+    {
+        for (int dy = -1; dy <= 1; ++dy)
+        {
+            int nx = glm::clamp(cell.x + dx, 0, GRID_WIDTH - 1);
+            int ny = glm::clamp(cell.y + dy, 0, GRID_HEIGHT - 1);
+
+            for (int j : grid[GetCellIndex(nx, ny)])
+            {
+                vec2 diff = particles[j].position - particle.position;
+                float dist_sqrt = dot(diff, diff);
+                if (dist_sqrt < KERNEL_RADIUS_SQR) candidates.emplace_back(dist_sqrt, j);
+            }
+        }
+    }
+
+    // sort by distance
+    sort(candidates.begin(), candidates.end());
+
+    // keep closest neightbours
+    if (candidates.size() > MAX_NEIGHBORS) candidates.resize(MAX_NEIGHBORS);
+
+    // convert from pair to index
+    vector<int> neighbors;
+    neighbors.reserve(candidates.size());
+    for (auto& candidate : candidates) neighbors.push_back(candidate.second);
+
     return neighbors;
 }
 
@@ -193,7 +234,7 @@ void ComputeDensityPressure()
     {
         Particle& particle_a = particles[i];
         particle_a.density = 0.0f;
-        vector<int> neighbors = GetNeighbors(particle_a);
+        vector<int> neighbors = GetNearNeighbors(particle_a);
         for (int j : neighbors)
         {
             Particle& particle_b = particles[j];
@@ -213,7 +254,7 @@ void ComputeForces()
         vec2 pressure_force(0.f, 0.f);
         vec2 viscosity_force(0.f, 0.f);
 
-        vector<int> neighbors = GetNeighbors(particle_a);
+        vector<int> neighbors = GetNearNeighbors(particle_a);
         for (int j : neighbors)
         {
             if (i == j) continue;
