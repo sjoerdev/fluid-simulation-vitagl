@@ -16,7 +16,7 @@ set(VITA_TITLEID  "PSVSPHSIM")
 set(VITA_VERSION  "01.00")
 
 set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -std=gnu11 -O2 -ftree-vectorize")
-set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++11 -O2 -ftree-vectorize")
+set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++17 -O2 -ftree-vectorize")
 
 add_executable(${PROJECT_NAME} src/main.cpp)
 
