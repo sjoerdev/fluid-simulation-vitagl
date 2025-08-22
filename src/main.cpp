@@ -15,7 +15,7 @@
 #include <glm/gtc/matrix_transform.hpp>
 #include <glm/gtc/type_ptr.hpp>
 
-#include "debugfont.h"
+#include "debugfont.hpp"
 
 using namespace std;
 using namespace glm;
