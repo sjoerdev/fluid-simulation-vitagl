@@ -16,6 +16,7 @@
 #include <glm/gtc/type_ptr.hpp>
 
 #include "debugfont.hpp"
+#include "quickpool.hpp"
 
 using namespace std;
 using namespace glm;
@@ -30,6 +31,10 @@ uint32_t buttons_last = 0;
 // other
 uint32_t* vitagl_display_framebuf;
 int MAX_NEIGHBORS = 10;
+quickpool::ThreadPool pool(3);
+vector<vector<int>> neighbor_buffer;
+vector<float> position_buffer;
+vector<float> pressure_buffer;
 
 // opengl
 GLuint vao;
@@ -203,6 +208,45 @@ vector<int> GetNearNeighbors(Particle& particle)
     return neighbors;
 }
 
+inline vector<int>& GetNearNeighborsMTBF(Particle& particle, int index)
+{
+    auto& neighbors = neighbor_buffer[index];
+    neighbors.clear();
+
+    ivec2 cell = GetCell(particle.position);
+    for (int dx = -1; dx <= 1; ++dx)
+    {
+        for (int dy = -1; dy <= 1; ++dy)
+        {
+            int nx = glm::clamp(cell.x + dx, 0, GRID_WIDTH - 1);
+            int ny = glm::clamp(cell.y + dy, 0, GRID_HEIGHT - 1);
+
+            for (int j : grid[GetCellIndex(nx, ny)])
+            {
+                vec2 diff = particles[j].position - particle.position;
+                if (dot(diff, diff) < KERNEL_RADIUS_SQR) neighbors.push_back(j);
+            }
+        }
+    }
+
+    /*
+
+    // sort by distance
+    sort(candidates.begin(), candidates.end());
+
+    // keep closest neightbours
+    if (candidates.size() > MAX_NEIGHBORS) candidates.resize(MAX_NEIGHBORS);
+
+    // convert from pair to index
+    vector<int> neighbors;
+    neighbors.reserve(candidates.size());
+    for (auto& candidate : candidates) neighbors.push_back(candidate.second);
+
+    */
+
+    return neighbors;
+}
+
 void SpawnParticles()
 {
     float radius = 60;
@@ -244,6 +288,28 @@ void ComputeDensityPressure()
         }
         particle_a.pressure = GAS_CONSTANT * (particle_a.density - REST_DENSITY);
     }
+}
+
+void ComputeDensityPressureMTBF()
+{
+    BuildGrid();
+
+    pool.parallel_for(0, particles.size(), [](int i)
+    {
+        Particle& particle_a = particles[i];
+        particle_a.density = 0.f;
+
+        auto& neighbors = GetNearNeighborsMTBF(particle_a, i);
+        for (int j : neighbors)
+        {
+            Particle& particle_b = particles[j];
+            vec2 rij = particle_b.position - particle_a.position;
+            float r2 = dot(rij, rij);
+            particle_a.density += PARTICLE_MASS * POLY6 * pow(KERNEL_RADIUS_SQR - r2, 3.f);
+        }
+
+        particle_a.pressure = GAS_CONSTANT * (particle_a.density - REST_DENSITY);
+    });
 }
 
 void ComputeForces()
@@ -295,6 +361,48 @@ void ComputeForces()
     }
 }
 
+void ComputeForcesMTBF()
+{
+    pool.parallel_for(0, particles.size(), [](int i)
+    {
+        Particle& particle_a = particles[i];
+        vec2 pressure_force(0.f);
+        vec2 viscosity_force(0.f);
+
+        auto& neighbors = neighbor_buffer[i];
+        for (int j : neighbors)
+        {
+            if (i == j) continue;
+
+            Particle& particle_b = particles[j];
+            vec2 diff = particle_b.position - particle_a.position;
+            float dist = length(diff);
+
+            if (dist < 1e-6f)
+            {
+                diff = vec2((RandomValue() - 0.5f) * 0.0001f, (RandomValue() - 0.5f) * 0.0001f);
+                dist = length(diff);
+            }
+
+            if (dist < KERNEL_RADIUS)
+            {
+                pressure_force += -normalize(diff) * PARTICLE_MASS * (particle_a.pressure + particle_b.pressure) / (2.f * particle_b.density) * SPIKY_GRAD * pow(KERNEL_RADIUS - dist, 3.f);
+                viscosity_force += VISCOSITY * PARTICLE_MASS * (particle_b.velocity - particle_a.velocity) / particle_b.density * VISC_LAP * (KERNEL_RADIUS - dist);
+            }
+        }
+
+        vec2 finger_pos = GetTouchPosition(0);
+        vec2 finger_dir = glm::normalize(finger_pos - particle_a.position);
+        float finger_dist = glm::distance(finger_pos, particle_a.position);
+        bool finger_pressing = IsTouchDown();
+        vec2 finger_force = (finger_pressing && finger_dist < 10000) ? finger_dir * PARTICLE_MASS / particle_a.density * 20.f : vec2(0.f);
+
+        vec2 gravity_force = vec2(0.f, GRAVITY) * PARTICLE_MASS / particle_a.density;
+
+        particle_a.force = pressure_force + viscosity_force + gravity_force + finger_force;
+    });
+}
+
 void Integrate()
 {
     for (Particle& particle : particles)
@@ -327,11 +435,34 @@ void Integrate()
     }
 }
 
+void IntegrateMTBF()
+{
+    pool.parallel_for(0, particles.size(), [](int i)
+    {
+        Particle& p = particles[i];
+
+        p.velocity += INTIGRATION_TIMESTEP * p.force / p.density;
+        p.position += INTIGRATION_TIMESTEP * p.velocity;
+
+        if (p.position.x < BOUNDARY_EPSILON) { p.velocity.x *= BOUND_DAMPING; p.position.x = BOUNDARY_EPSILON; }
+        if (p.position.x > WINDOW_WIDTH - BOUNDARY_EPSILON) { p.velocity.x *= BOUND_DAMPING; p.position.x = WINDOW_WIDTH - BOUNDARY_EPSILON; }
+        if (p.position.y < BOUNDARY_EPSILON) { p.velocity.y *= BOUND_DAMPING; p.position.y = BOUNDARY_EPSILON; }
+        if (p.position.y > WINDOW_HEIGHT - BOUNDARY_EPSILON) { p.velocity.y *= BOUND_DAMPING; p.position.y = WINDOW_HEIGHT - BOUNDARY_EPSILON; }
+    });
+}
+
 void Update()
 {
     ComputeDensityPressure();
     ComputeForces();
     Integrate();
+}
+
+void UpdateMTBF()
+{
+    ComputeDensityPressureMTBF();
+    ComputeForcesMTBF();
+    IntegrateMTBF();
 }
 
 std::vector<float> PositionFloatArray() {
@@ -389,6 +520,42 @@ void Render()
     glDrawArrays(GL_POINTS, 0, static_cast<GLsizei>(particles.size()));
 
     // unbind vao
+    glBindVertexArray(0);
+}
+
+void RenderMTBF()
+{
+    glClear(GL_COLOR_BUFFER_BIT);
+
+    if (particles.empty()) return;
+
+    glUseProgram(program);
+    glUniformMatrix4fv(glGetUniformLocation(program, "projection"), 1, !USE_GLSL, value_ptr(projection));
+
+    // pressure
+    float pressureOffset = GAS_CONSTANT * -REST_DENSITY;
+    glUniform1f(glGetUniformLocation(program, "minPressure"), pressureOffset + 0);
+    glUniform1f(glGetUniformLocation(program, "maxPressure"), pressureOffset + 100);
+    glUniform1f(glGetUniformLocation(program, "kernelSize"), KERNEL_RADIUS);
+
+    // prepare buffers
+    for (int i = 0; i < particles.size(); i++)
+    {
+        position_buffer[i * 2] = particles[i].position.x;
+        position_buffer[i * 2 + 1] = particles[i].position.y;
+        pressure_buffer[i] = particles[i].pressure;
+    }
+
+    glBindVertexArray(vao);
+
+    glBindBuffer(GL_ARRAY_BUFFER, position_vbo);
+    glBufferSubData(GL_ARRAY_BUFFER, 0, particles.size() * 2 * sizeof(float), position_buffer.data());
+
+    glBindBuffer(GL_ARRAY_BUFFER, pressure_vbo);
+    glBufferSubData(GL_ARRAY_BUFFER, 0, particles.size() * sizeof(float), pressure_buffer.data());
+
+    glDrawArrays(GL_POINTS, 0, static_cast<GLsizei>(particles.size()));
+
     glBindVertexArray(0);
 }
 
@@ -639,6 +806,11 @@ int main()
     sceTouchSetSamplingState(SCE_TOUCH_PORT_FRONT, SCE_TOUCH_SAMPLING_STATE_START);
     sceTouchEnableTouchForce(SCE_TOUCH_PORT_FRONT);
 
+    // allocate particle buffers
+    neighbor_buffer.resize(MAX_PARTICLES);
+    position_buffer.resize(MAX_PARTICLES * 2);
+    pressure_buffer.resize(MAX_PARTICLES);
+
     // init simulation
     SpawnParticles();
 
@@ -650,8 +822,19 @@ int main()
         if (IsButtonPressed(SCE_CTRL_CROSS)) SpawnParticles();
         if (IsButtonPressed(SCE_CTRL_CIRCLE)) ResetParticles();
 
-        Update();
-        Render();
+        if (IsButtonPressed(SCE_CTRL_TRIANGLE))
+        {
+            auto task = []()
+            {
+                SpawnParticles();
+            };
+
+            thread tred = thread(task);
+            tred.join();
+        }
+
+        UpdateMTBF();
+        RenderMTBF();
 
         vglSwapBuffers(GL_FALSE);
         buttons_last = controller_data.buttons;
