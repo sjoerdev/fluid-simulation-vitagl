@@ -2,6 +2,9 @@
 
 This is an SPH fluid simulation for the vita.
 
+## Showcase:
+https://github.com/user-attachments/assets/a05789b8-3cdc-4c62-8b07-8e2bfecd9748
+
 ## Building:
 
 Building on Linux:
