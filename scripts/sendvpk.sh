@@ -1,5 +1,3 @@
-#!/bin/bash
-
 VPK=simulation.vpk
 IP=192.168.1.162
 

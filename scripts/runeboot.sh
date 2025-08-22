@@ -1,5 +1,3 @@
-#!/bin/bash
-
 TITLE=PSVSPHSIM
 IP=192.168.1.162
 
