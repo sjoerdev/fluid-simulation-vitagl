@@ -31,7 +31,7 @@ uint32_t buttons_last = 0;
 // other
 uint32_t* vitagl_display_framebuf;
 int MAX_NEIGHBORS = 10;
-quickpool::ThreadPool pool(3);
+quickpool::ThreadPool pool;
 vector<vector<int>> neighbor_buffer;
 vector<float> position_buffer;
 vector<float> pressure_buffer;

@@ -39,6 +39,7 @@ target_link_libraries(${PROJECT_NAME}
   SceShaccCgExt
   taihen_stub
   SceShaccCg_stub
+  SceVshBridge_stub
   stdc++
   "-Wl,--whole-archive" pthread "-Wl,--no-whole-archive"
   zip

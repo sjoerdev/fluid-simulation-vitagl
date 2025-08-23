@@ -32,6 +32,11 @@
 #include <thread>
 #include <vector>
 
+#ifdef __vita__
+#include <psp2/kernel/threadmgr.h>
+#include <psp2/vshbridge.h>
+#endif
+
 #if (defined __linux__ || defined AFFINITY)
 #include <pthread.h>
 #endif
@@ -757,6 +762,27 @@ class TaskManager
     std::exception_ptr err_ptr_{ nullptr };
 };
 
+bool HasKernelModule(const char* name)
+{
+    int search_unk[2];
+    int result = _vshKernelSearchModuleByName(name, search_unk);
+    return result > 0;
+}
+
+// find out which cores are allowed for use by the vita
+inline std::vector<size_t>
+get_avail_cores_vita()
+{
+    std::vector<size_t> cores;
+
+    size_t total_cores = 3;
+    if (HasKernelModule("CapUnlocker")) total_cores = 4; // enable 4th core if capunlocker is used
+
+    for (size_t i = 0; i < total_cores; i++) cores.push_back(i);
+
+    return cores;
+}
+
 // find out which cores are allowed for use by pthread
 inline std::vector<size_t>
 get_avail_cores()
@@ -779,13 +805,15 @@ get_avail_cores()
     return avail_cores;
 }
 
-inline size_t
-num_cores_avail()
+inline size_t num_cores_avail()
 {
-#if (defined __linux__)
+#if defined(__vita__)
+    return get_avail_cores_vita().size();
+#elif defined(__linux__)
     return get_avail_cores().size();
-#endif
+#else
     return std::thread::hardware_concurrency();
+#endif
 }
 
 } // end namespace sched
@@ -850,8 +878,11 @@ class ThreadPool
             for (size_t id = 0; id < threads; ++id) {
                 add_worker(id);
             }
-#if (defined __linux__)
-            set_thread_affinity();
+
+#if defined(__vita__)
+            set_thread_affinity_vita();
+#elif defined(__linux__)
+            set_thread_affinity(); // generic Linux
 #endif
         }
         active_threads_ = threads;
@@ -972,6 +1003,35 @@ class ThreadPool
             }
         });
     }
+
+#if defined(__vita__)
+    //! Sets thread affinity on vita.
+    void set_thread_affinity_vita()
+    {
+        auto available = sched::get_avail_cores_vita();
+        size_t threads = available.size();
+        
+        cpu_set_t cpuset;
+
+        static const size_t vita_3_map[3] = { 0, 1, 2 };
+        static const size_t vita_4_map[4] = { 0, 1, 2, 3 };
+
+        for (size_t id = 0; id < threads; id++) {
+            CPU_ZERO(&cpuset);
+            if (threads == 3) {
+                CPU_SET(vita_3_map[id % 3], &cpuset);
+            } else {
+                CPU_SET(vita_4_map[id % 4], &cpuset);
+            }
+
+            int rc = pthread_setaffinity_np(
+                workers_.at(id).native_handle(), sizeof(cpu_set_t), &cpuset);
+            if (rc != 0) {
+                throw std::runtime_error("Error setting Vita thread affinity");
+            }
+        }
+    }
+#endif
 
 #if (defined __linux__)
     //! sets thread affinity on linux.
