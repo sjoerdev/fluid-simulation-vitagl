@@ -612,6 +612,9 @@ void vitagl_display_callback(void *framebuf)
     string useglsl = USE_GLSL ? "true" : "false";
     string second = "using glsl: " + useglsl;
     vgl_draw_string_anchored(0, 1, second.c_str(), 2, 1);
+
+    string third = "threads: " + to_string(pool.get_active_threads());
+    vgl_draw_string_anchored(0, 2, third.c_str(), 2, 1);
 }
 
 GLuint CompileShader(string source, GLenum type)
