@@ -229,21 +229,6 @@ inline vector<int>& GetNearNeighborsMTBF(Particle& particle, int index)
         }
     }
 
-    /*
-
-    // sort by distance
-    sort(candidates.begin(), candidates.end());
-
-    // keep closest neightbours
-    if (candidates.size() > MAX_NEIGHBORS) candidates.resize(MAX_NEIGHBORS);
-
-    // convert from pair to index
-    vector<int> neighbors;
-    neighbors.reserve(candidates.size());
-    for (auto& candidate : candidates) neighbors.push_back(candidate.second);
-
-    */
-
     return neighbors;
 }
 
@@ -824,17 +809,6 @@ int main()
 
         if (IsButtonPressed(SCE_CTRL_CROSS)) SpawnParticles();
         if (IsButtonPressed(SCE_CTRL_CIRCLE)) ResetParticles();
-
-        if (IsButtonPressed(SCE_CTRL_TRIANGLE))
-        {
-            auto task = []()
-            {
-                SpawnParticles();
-            };
-
-            thread tred = thread(task);
-            tred.join();
-        }
 
         UpdateMTBF();
         RenderMTBF();
