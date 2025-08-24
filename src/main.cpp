@@ -1,20 +1,22 @@
+// std
 #include <vector>
 #include <random>
 #include <chrono>
 #include <algorithm>
+#include <cstring>
 
-#include <stdio.h>
-#include <string.h>
-
+// vita
 #include <vitasdk.h>
 #include <vitaGL.h>
 #include <psp2/touch.h>
 
+// glm
 #include <glm/glm.hpp>
 #include <glm/ext/scalar_constants.hpp>
 #include <glm/gtc/matrix_transform.hpp>
 #include <glm/gtc/type_ptr.hpp>
 
+// include
 #include <debugfont.hpp>
 #include <quickpool.hpp>
 
