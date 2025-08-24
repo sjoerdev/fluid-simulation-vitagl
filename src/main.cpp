@@ -212,17 +212,24 @@ inline vector<int>& GetNearNeighborsMTBF(Particle& particle, int index)
 {
     auto& neighbors = neighbor_buffer[index];
     neighbors.clear();
+    
+    ivec2 particle_cell = GetCell(particle.position);
 
-    ivec2 cell = GetCell(particle.position);
-    for (int dx = -1; dx <= 1; ++dx)
+    int range = int(ceil(KERNEL_RADIUS / CELL_SIZE));
+
+    for (int offset_x = -range; offset_x <= range; ++offset_x)
     {
-        for (int dy = -1; dy <= 1; ++dy)
+        for (int offset_y = -range; offset_y <= range; ++offset_y)
         {
-            int nx = glm::clamp(cell.x + dx, 0, GRID_WIDTH - 1);
-            int ny = glm::clamp(cell.y + dy, 0, GRID_HEIGHT - 1);
-
-            for (int j : grid[GetCellIndex(nx, ny)])
+            // calculate cell index
+            int x = glm::clamp(particle_cell.x + offset_x, 0, GRID_WIDTH - 1);
+            int y = glm::clamp(particle_cell.y + offset_y, 0, GRID_HEIGHT - 1);
+            int cell_index = GetCellIndex(x, y);
+            
+            // for each particle in cell
+            for (int j : grid[cell_index])
             {
+                // calculate if effected by kernel
                 vec2 diff = particles[j].position - particle.position;
                 if (dot(diff, diff) < KERNEL_RADIUS_SQR) neighbors.push_back(j);
             }
