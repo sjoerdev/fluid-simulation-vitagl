@@ -9,9 +9,13 @@ https://github.com/user-attachments/assets/a05789b8-3cdc-4c62-8b07-8e2bfecd9748
 
 Building on Linux:
 
-1. Install [VitaSDK](https://vitasdk.org/)
-2. Build and install [VitaGL](https://github.com/Rinnegatamante/vitaGL) with the ``HAVE_GLSL_SUPPORT=1`` make flag
-2. Run ``cmake . && make``
+1. Install the [VitaSDK](https://vitasdk.org/)
+2. Build and install [VitaGL](https://github.com/Rinnegatamante/vitaGL) with these make flags:
+    - ``HAVE_GLSL_SUPPORT=1``
+    - ``CIRCULAR_VERTEX_POOL=2``
+    - ``USE_SCRATCH_MEMORY=1``
+    - ``NO_DEBUG=1``
+3. Build with ``cmake . && make``
 
 Building on Windows:
 
