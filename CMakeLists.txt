@@ -15,11 +15,17 @@ set(VITA_APP_NAME "simulation")
 set(VITA_TITLEID  "PSVSPHSIM")
 set(VITA_VERSION  "01.00")
 
+# compiler flags
 set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -std=c11 -O2 -ftree-vectorize")
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++17 -O2 -ftree-vectorize")
 
+# code to compile
 add_executable(${PROJECT_NAME} src/main.cpp)
 
+# third party headers
+target_include_directories(${PROJECT_NAME} PRIVATE include)
+
+# dynamic libs to link against
 target_link_libraries(${PROJECT_NAME}
   vitaGL
   c

@@ -15,11 +15,8 @@
 #include <glm/gtc/matrix_transform.hpp>
 #include <glm/gtc/type_ptr.hpp>
 
-#include "debugfont.hpp"
-#include "quickpool.hpp"
-
-using namespace std;
-using namespace glm;
+#include <debugfont.hpp>
+#include <quickpool.hpp>
 
 bool USE_GLSL = true;
 
@@ -32,16 +29,17 @@ uint32_t buttons_last = 0;
 uint32_t* vitagl_display_framebuf;
 int MAX_NEIGHBORS = 10;
 quickpool::ThreadPool pool;
-vector<vector<int>> neighbor_buffer;
-vector<float> position_buffer;
-vector<float> pressure_buffer;
+
+std::vector<std::vector<int>> neighbor_buffer;
+std::vector<float> position_buffer;
+std::vector<float> pressure_buffer;
 
 // opengl
 GLuint vao;
 GLuint position_vbo;
 GLuint pressure_vbo;
 GLuint program;
-mat4 projection;
+glm::mat4 projection;
 
 // solver parameters
 float GRAVITY = -10;
@@ -54,9 +52,9 @@ float VISCOSITY = 200;
 float INTIGRATION_TIMESTEP = 0.0007f;
 
 // smoothing kernels and gradients
-float POLY6 = 4.f / (pi<float>() * pow(KERNEL_RADIUS, 8.f));
-float SPIKY_GRAD = -10.f / (pi<float>() * pow(KERNEL_RADIUS, 5.f));
-float VISC_LAP = 40.f / (pi<float>() * pow(KERNEL_RADIUS, 5.f));
+float POLY6 = 4.f / (glm::pi<float>() * pow(KERNEL_RADIUS, 8.f));
+float SPIKY_GRAD = -10.f / (glm::pi<float>() * pow(KERNEL_RADIUS, 5.f));
+float VISC_LAP = 40.f / (glm::pi<float>() * pow(KERNEL_RADIUS, 5.f));
 
 // simulation boundary
 float BOUNDARY_EPSILON = KERNEL_RADIUS;
@@ -64,34 +62,34 @@ float BOUND_DAMPING = -0.5f;
 
 struct Particle
 {
-    vec2 position;
-    vec2 velocity;
-    vec2 force;
+    glm::vec2 position;
+    glm::vec2 velocity;
+    glm::vec2 force;
     float density;
     float pressure;
 
     Particle(float x, float y)
     {
-        position = vec2(x, y);
-        velocity = vec2(0.f, 0.f);
-        force = vec2(0.f, 0.f);
+        position = glm::vec2(x, y);
+        velocity = glm::vec2(0.f, 0.f);
+        force = glm::vec2(0.f, 0.f);
         density = 0;
         pressure = 0.f;
     }
 };
 
 // particles
-vector<Particle> particles;
+std::vector<Particle> particles;
 int MAX_PARTICLES = 1200;
 
 // projection
 int WINDOW_WIDTH = 960;
 int WINDOW_HEIGHT = 544;
 
-vec2 GetTouchPosition(int finger)
+glm::vec2 GetTouchPosition(int finger)
 {
     auto report = touch[SCE_TOUCH_PORT_FRONT].report[finger];
-    auto touchpos = vec2(report.x / 2, WINDOW_HEIGHT - report.y / 2);
+    auto touchpos = glm::vec2(report.x / 2, WINDOW_HEIGHT - report.y / 2);
     return touchpos;
 }
 
@@ -126,16 +124,16 @@ float RandomValue()
 float CELL_SIZE = KERNEL_RADIUS;
 int GRID_WIDTH = int(WINDOW_WIDTH / CELL_SIZE) + 1;
 int GRID_HEIGHT = int(WINDOW_HEIGHT / CELL_SIZE) + 1;
-vector<vector<int>> grid;
+std::vector<std::vector<int>> grid;
 
 inline int GetCellIndex(int x, int y)
 {
     return y * GRID_WIDTH + x;
 }
 
-inline ivec2 GetCell(const vec2& pos)
+inline glm::ivec2 GetCell(const glm::vec2& pos)
 {
-    return ivec2(int(pos.x / CELL_SIZE), int(pos.y / CELL_SIZE));
+    return glm::ivec2(int(pos.x / CELL_SIZE), int(pos.y / CELL_SIZE));
 }
 
 void BuildGrid()
@@ -144,76 +142,19 @@ void BuildGrid()
     grid.resize(GRID_WIDTH * GRID_HEIGHT);
     for (int i = 0; i < particles.size(); ++i)
     {
-        ivec2 cell = GetCell(particles[i].position);
-        // clamp to valid range
+        glm::ivec2 cell = GetCell(particles[i].position);
         cell.x = glm::clamp(cell.x, 0, GRID_WIDTH - 1);
         cell.y = glm::clamp(cell.y, 0, GRID_HEIGHT - 1);
         grid[GetCellIndex(cell.x, cell.y)].push_back(i);
     }
 }
 
-vector<int> GetAllNeighbors(const Particle& p)
-{
-    vector<int> neighbors;
-    ivec2 cell = GetCell(p.position);
-
-    for (int dx = -1; dx <= 1; ++dx)
-    {
-        for (int dy = -1; dy <= 1; ++dy)
-        {
-            int nx = glm::clamp(cell.x + dx, 0, GRID_WIDTH - 1);
-            int ny = glm::clamp(cell.y + dy, 0, GRID_HEIGHT - 1);
-            vector<int>& cellParticles = grid[GetCellIndex(nx, ny)];
-            neighbors.insert(neighbors.end(), cellParticles.begin(), cellParticles.end());
-        }
-    }
-    return neighbors;
-}
-
-vector<int> GetNearNeighbors(Particle& particle)
-{
-    // neighbour candidates with distance encoded
-    vector<pair<float, int>> candidates;
-    candidates.reserve(MAX_NEIGHBORS * 2);
-
-    ivec2 cell = GetCell(particle.position);
-
-    for (int dx = -1; dx <= 1; ++dx)
-    {
-        for (int dy = -1; dy <= 1; ++dy)
-        {
-            int nx = glm::clamp(cell.x + dx, 0, GRID_WIDTH - 1);
-            int ny = glm::clamp(cell.y + dy, 0, GRID_HEIGHT - 1);
-
-            for (int j : grid[GetCellIndex(nx, ny)])
-            {
-                vec2 diff = particles[j].position - particle.position;
-                float dist_sqrt = dot(diff, diff);
-                if (dist_sqrt < KERNEL_RADIUS_SQR) candidates.emplace_back(dist_sqrt, j);
-            }
-        }
-    }
-
-    // sort by distance
-    sort(candidates.begin(), candidates.end());
-
-    // keep closest neightbours
-    if (candidates.size() > MAX_NEIGHBORS) candidates.resize(MAX_NEIGHBORS);
-
-    // convert from pair to index
-    vector<int> neighbors;
-    neighbors.reserve(candidates.size());
-    for (auto& candidate : candidates) neighbors.push_back(candidate.second);
-
-    return neighbors;
-}
-
-inline vector<int>& GetNearNeighborsMTBF(Particle& particle, int index)
+inline std::vector<int>& GetNearNeighborsMTBF(Particle& particle, int index)
 {
     auto& neighbors = neighbor_buffer[index];
     neighbors.clear();
     
-    ivec2 particle_cell = GetCell(particle.position);
+    glm::ivec2 particle_cell = GetCell(particle.position);
 
     int range = int(ceil(KERNEL_RADIUS / CELL_SIZE));
 
@@ -222,16 +163,16 @@ inline vector<int>& GetNearNeighborsMTBF(Particle& particle, int index)
         for (int offset_y = -range; offset_y <= range; ++offset_y)
         {
             // calculate cell index
-            int x = glm::clamp(particle_cell.x + offset_x, 0, GRID_WIDTH - 1);
-            int y = glm::clamp(particle_cell.y + offset_y, 0, GRID_HEIGHT - 1);
-            int cell_index = GetCellIndex(x, y);
+            int cell_x = glm::clamp(particle_cell.x + offset_x, 0, GRID_WIDTH - 1);
+            int cell_y = glm::clamp(particle_cell.y + offset_y, 0, GRID_HEIGHT - 1);
+            int cell_index = GetCellIndex(cell_x, cell_y);
             
             // for each particle in cell
             for (int j : grid[cell_index])
             {
                 // calculate if effected by kernel
-                vec2 diff = particles[j].position - particle.position;
-                if (dot(diff, diff) < KERNEL_RADIUS_SQR) neighbors.push_back(j);
+                glm::vec2 diff = particles[j].position - particle.position;
+                if (glm::dot(diff, diff) < KERNEL_RADIUS_SQR) neighbors.push_back(j);
             }
         }
     }
@@ -242,15 +183,15 @@ inline vector<int>& GetNearNeighborsMTBF(Particle& particle, int index)
 void SpawnParticles()
 {
     float radius = 60;
-    vec2 center = vec2(WINDOW_WIDTH / 2, WINDOW_HEIGHT / 2);
+    glm::vec2 center = glm::vec2(WINDOW_WIDTH / 2, WINDOW_HEIGHT / 2);
     float spacing = KERNEL_RADIUS;
 
     for (float y = center.y - radius; y <= center.y + radius; y += spacing)
     {
         for (float x = center.x - radius; x <= center.x + radius; x += spacing)
         {
-            vec2 offset = vec2(RandomValue() - 0.5f, RandomValue() - 0.5f);
-            vec2 position = vec2(x, y);
+            glm::vec2 offset = glm::vec2(RandomValue() - 0.5f, RandomValue() - 0.5f);
+            glm::vec2 position = glm::vec2(x, y);
             bool inside = distance(center, position) <= radius;
             if (inside && particles.size() < MAX_PARTICLES) particles.push_back(Particle(x + offset.x, y + offset.y));
         }
@@ -261,25 +202,6 @@ void ResetParticles()
 {
     particles.clear();
     particles.shrink_to_fit();
-}
-
-void ComputeDensityPressure()
-{
-    BuildGrid();
-    for (int i = 0; i < particles.size(); ++i)
-    {
-        Particle& particle_a = particles[i];
-        particle_a.density = 0.0f;
-        vector<int> neighbors = GetNearNeighbors(particle_a);
-        for (int j : neighbors)
-        {
-            Particle& particle_b = particles[j];
-            vec2 rij = particle_b.position - particle_a.position;
-            float r2 = dot(rij, rij);
-            if (r2 < KERNEL_RADIUS_SQR) particle_a.density += PARTICLE_MASS * POLY6 * pow(KERNEL_RADIUS_SQR - r2, 3.0f);
-        }
-        particle_a.pressure = GAS_CONSTANT * (particle_a.density - REST_DENSITY);
-    }
 }
 
 void ComputeDensityPressureMTBF()
@@ -295,8 +217,8 @@ void ComputeDensityPressureMTBF()
         for (int j : neighbors)
         {
             Particle& particle_b = particles[j];
-            vec2 rij = particle_b.position - particle_a.position;
-            float r2 = dot(rij, rij);
+            glm::vec2 rij = particle_b.position - particle_a.position;
+            float r2 = glm::dot(rij, rij);
             particle_a.density += PARTICLE_MASS * POLY6 * pow(KERNEL_RADIUS_SQR - r2, 3.f);
         }
 
@@ -304,62 +226,13 @@ void ComputeDensityPressureMTBF()
     });
 }
 
-void ComputeForces()
-{
-    for (int i = 0; i < particles.size(); ++i)
-    {
-        Particle& particle_a = particles[i];
-        vec2 pressure_force(0.f, 0.f);
-        vec2 viscosity_force(0.f, 0.f);
-
-        vector<int> neighbors = GetNearNeighbors(particle_a);
-        for (int j : neighbors)
-        {
-            if (i == j) continue;
-            Particle& particle_b = particles[j];
-            vec2 diff = particle_b.position - particle_a.position;
-            float dist = length(diff);
-            
-            // particle clumping prevention
-            if (dist < 0.000001f)
-            {
-                // apply random offset
-                vec2 rand_offset = vec2((RandomValue() - 0.5f) * 0.0001f, (RandomValue() - 0.5f) * 0.0001f);
-                particle_a.position += rand_offset;
-
-                // recalc diff and dist
-                diff = particle_b.position - particle_a.position;
-                dist = length(diff);
-            }
-
-            if (dist < KERNEL_RADIUS)
-            {
-                pressure_force += -normalize(diff) * PARTICLE_MASS * (particle_a.pressure + particle_b.pressure) / (2.f * particle_b.density) * SPIKY_GRAD * pow(KERNEL_RADIUS - dist, 3.f);
-                viscosity_force += VISCOSITY * PARTICLE_MASS * (particle_b.velocity - particle_a.velocity) / particle_b.density * VISC_LAP * (KERNEL_RADIUS - dist);
-            }
-        }
-
-        vec2 finger_pos = GetTouchPosition(0);
-        vec2 finger_dir = glm::normalize(finger_pos - particle_a.position);
-        float finger_dist = glm::distance(finger_pos, particle_a.position);
-        bool finger_pressing = IsTouchDown();
-        bool finger_effected = finger_pressing && finger_dist < 10000;
-        vec2 finger_scaledforce = finger_dir * PARTICLE_MASS / particle_a.density * 20.0f;
-        vec2 finger_finalforce = finger_effected ? finger_scaledforce : vec2(0, 0);
-
-        vec2 gravity_force = vec2(0, GRAVITY) * PARTICLE_MASS / particle_a.density;
-
-        particle_a.force = pressure_force + viscosity_force + gravity_force + finger_finalforce;
-    }
-}
-
 void ComputeForcesMTBF()
 {
     pool.parallel_for(0, particles.size(), [](int i)
     {
         Particle& particle_a = particles[i];
-        vec2 pressure_force(0.f);
-        vec2 viscosity_force(0.f);
+        glm::vec2 pressure_force(0.f);
+        glm::vec2 viscosity_force(0.f);
 
         auto& neighbors = neighbor_buffer[i];
         for (int j : neighbors)
@@ -367,38 +240,40 @@ void ComputeForcesMTBF()
             if (i == j) continue;
 
             Particle& particle_b = particles[j];
-            vec2 diff = particle_b.position - particle_a.position;
-            float dist = length(diff);
+            glm::vec2 diff = particle_b.position - particle_a.position;
+            float dist = glm::length(diff);
 
             if (dist < 1e-6f)
             {
-                diff = vec2((RandomValue() - 0.5f) * 0.0001f, (RandomValue() - 0.5f) * 0.0001f);
-                dist = length(diff);
+                diff = glm::vec2((RandomValue() - 0.5f) * 0.0001f, (RandomValue() - 0.5f) * 0.0001f);
+                dist = glm::length(diff);
             }
 
             if (dist < KERNEL_RADIUS)
             {
-                pressure_force += -normalize(diff) * PARTICLE_MASS * (particle_a.pressure + particle_b.pressure) / (2.f * particle_b.density) * SPIKY_GRAD * pow(KERNEL_RADIUS - dist, 3.f);
+                pressure_force += -normalize(diff) * PARTICLE_MASS * (particle_a.pressure + particle_b.pressure) / (2.f * particle_b.density) * SPIKY_GRAD * std::pow(KERNEL_RADIUS - dist, 3.f);
                 viscosity_force += VISCOSITY * PARTICLE_MASS * (particle_b.velocity - particle_a.velocity) / particle_b.density * VISC_LAP * (KERNEL_RADIUS - dist);
             }
         }
 
-        vec2 finger_pos = GetTouchPosition(0);
-        vec2 finger_dir = glm::normalize(finger_pos - particle_a.position);
+        glm::vec2 finger_pos = GetTouchPosition(0);
+        glm::vec2 finger_dir = glm::normalize(finger_pos - particle_a.position);
         float finger_dist = glm::distance(finger_pos, particle_a.position);
         bool finger_pressing = IsTouchDown();
-        vec2 finger_force = (finger_pressing && finger_dist < 10000) ? finger_dir * PARTICLE_MASS / particle_a.density * 20.f : vec2(0.f);
+        glm::vec2 finger_force = (finger_pressing && finger_dist < 10000) ? finger_dir * PARTICLE_MASS / particle_a.density * 20.f : glm::vec2(0.f);
 
-        vec2 gravity_force = vec2(0.f, GRAVITY) * PARTICLE_MASS / particle_a.density;
+        glm::vec2 gravity_force = glm::vec2(0.f, GRAVITY) * PARTICLE_MASS / particle_a.density;
 
         particle_a.force = pressure_force + viscosity_force + gravity_force + finger_force;
     });
 }
 
-void Integrate()
+void IntegrateMTBF()
 {
-    for (Particle& particle : particles)
+    pool.parallel_for(0, particles.size(), [](int i)
     {
+        Particle& particle = particles[i];
+
         // forward Euler integration
         particle.velocity += INTIGRATION_TIMESTEP * particle.force / particle.density;
         particle.position += INTIGRATION_TIMESTEP * particle.velocity;
@@ -424,30 +299,7 @@ void Integrate()
             particle.velocity.y *= BOUND_DAMPING;
             particle.position.y = WINDOW_HEIGHT - BOUNDARY_EPSILON;
         }
-    }
-}
-
-void IntegrateMTBF()
-{
-    pool.parallel_for(0, particles.size(), [](int i)
-    {
-        Particle& p = particles[i];
-
-        p.velocity += INTIGRATION_TIMESTEP * p.force / p.density;
-        p.position += INTIGRATION_TIMESTEP * p.velocity;
-
-        if (p.position.x < BOUNDARY_EPSILON) { p.velocity.x *= BOUND_DAMPING; p.position.x = BOUNDARY_EPSILON; }
-        if (p.position.x > WINDOW_WIDTH - BOUNDARY_EPSILON) { p.velocity.x *= BOUND_DAMPING; p.position.x = WINDOW_WIDTH - BOUNDARY_EPSILON; }
-        if (p.position.y < BOUNDARY_EPSILON) { p.velocity.y *= BOUND_DAMPING; p.position.y = BOUNDARY_EPSILON; }
-        if (p.position.y > WINDOW_HEIGHT - BOUNDARY_EPSILON) { p.velocity.y *= BOUND_DAMPING; p.position.y = WINDOW_HEIGHT - BOUNDARY_EPSILON; }
     });
-}
-
-void Update()
-{
-    ComputeDensityPressure();
-    ComputeForces();
-    Integrate();
 }
 
 void UpdateMTBF()
@@ -455,64 +307,6 @@ void UpdateMTBF()
     ComputeDensityPressureMTBF();
     ComputeForcesMTBF();
     IntegrateMTBF();
-}
-
-std::vector<float> PositionFloatArray() {
-    std::vector<float> buffer;
-    buffer.reserve(particles.size() * 2); // x, y for each particle
-
-    for (const auto& p : particles) {
-        buffer.push_back(p.position.x);
-        buffer.push_back(p.position.y);
-    }
-
-    return buffer;
-}
-
-std::vector<float> PressureFloatArray() {
-    std::vector<float> buffer;
-    buffer.reserve(particles.size()); // one pressure value per particle
-
-    for (const auto& p : particles) {
-        buffer.push_back(p.pressure);
-    }
-
-    return buffer;
-}
-
-void Render()
-{
-    glClear(GL_COLOR_BUFFER_BIT);
-
-    if (particles.empty()) return;
-
-    glUseProgram(program);
-    glUniformMatrix4fv(glGetUniformLocation(program, "projection"), 1, !USE_GLSL, value_ptr(projection));
-
-    // pressure
-    float pressureOffset = GAS_CONSTANT * -REST_DENSITY;
-    glUniform1f(glGetUniformLocation(program, "minPressure"), pressureOffset + 0);
-    glUniform1f(glGetUniformLocation(program, "maxPressure"), pressureOffset + 100);
-    glUniform1f(glGetUniformLocation(program, "kernelSize"), KERNEL_RADIUS);
-
-    // particles
-    glBindVertexArray(vao);
-
-    // position buffer
-    vector<float> position_buffer = PositionFloatArray();
-    glBindBuffer(GL_ARRAY_BUFFER, position_vbo);
-    glBufferSubData(GL_ARRAY_BUFFER, 0, position_buffer.size() * sizeof(float), position_buffer.data());
-
-    // pressure buffer
-    vector<float> pressure_buffer = PressureFloatArray();
-    glBindBuffer(GL_ARRAY_BUFFER, pressure_vbo);
-    glBufferSubData(GL_ARRAY_BUFFER, 0, pressure_buffer.size() * sizeof(float), pressure_buffer.data());
-
-    // draw particles
-    glDrawArrays(GL_POINTS, 0, static_cast<GLsizei>(particles.size()));
-
-    // unbind vao
-    glBindVertexArray(0);
 }
 
 void RenderMTBF()
@@ -598,18 +392,18 @@ void vitagl_display_callback(void *framebuf)
 {
     vitagl_display_framebuf = (uint32_t*)framebuf;
     
-    string first = "particles: " + to_string(particles.size()) + " / " + to_string(MAX_PARTICLES);
+    std::string first = "particles: " + std::to_string(particles.size()) + " / " + std::to_string(MAX_PARTICLES);
     vgl_draw_string_anchored(0, 0, first.c_str(), 2, 1);
 
-    string useglsl = USE_GLSL ? "true" : "false";
-    string second = "using glsl: " + useglsl;
+    std::string useglsl = USE_GLSL ? "true" : "false";
+    std::string second = "using glsl: " + useglsl;
     vgl_draw_string_anchored(0, 1, second.c_str(), 2, 1);
 
-    string third = "threads: " + to_string(pool.get_active_threads());
+    std::string third = "threads: " + std::to_string(pool.get_active_threads());
     vgl_draw_string_anchored(0, 2, third.c_str(), 2, 1);
 }
 
-GLuint CompileShader(string source, GLenum type)
+GLuint CompileShader(std::string source, GLenum type)
 {
     GLuint shader = glCreateShader(type);
     const char* src = source.c_str();
@@ -628,13 +422,13 @@ GLuint CompileShader(string source, GLenum type)
         std::string infoLog(length, ' ');
         glGetShaderInfoLog(shader, length, nullptr, &infoLog[0]);
         glDeleteShader(shader);
-        string log = infoLog;
+        std::string log = infoLog;
     }
 
     return shader;
 }
 
-GLuint CompileProgram(string vertCode, string fragCode)
+GLuint CompileProgram(std::string vertCode, std::string fragCode)
 {
     GLuint vertex = CompileShader(vertCode, GL_VERTEX_SHADER);
     GLuint fragment = CompileShader(fragCode, GL_FRAGMENT_SHADER);
@@ -654,7 +448,7 @@ GLuint CompileProgram(string vertCode, string fragCode)
         glGetProgramInfoLog(program, length, nullptr, &infoLog[0]);
         glDeleteShader(vertex);
         glDeleteShader(fragment);
-        string log = infoLog;
+        std::string log = infoLog;
     }
 
     glDeleteShader(vertex);
@@ -663,7 +457,7 @@ GLuint CompileProgram(string vertCode, string fragCode)
     return program;
 }
 
-string VertShaderCG()
+std::string VertShaderCG()
 {
     return R"(
         void main
@@ -691,7 +485,7 @@ string VertShaderCG()
     )";
 }
 
-string FragShaderCG()
+std::string FragShaderCG()
 {
     return R"(
         float4 main
@@ -709,9 +503,9 @@ string FragShaderCG()
     )";
 }
 
-string VertShaderGLSL()
+std::string VertShaderGLSL()
 {
-    string temp = 
+    std::string temp = 
     R"(
         #version 120
 
@@ -737,9 +531,9 @@ string VertShaderGLSL()
     return temp;
 }
 
-string FragShaderGLSL()
+std::string FragShaderGLSL()
 {
-    string temp = 
+    std::string temp = 
     R"(
         #version 120
 
@@ -793,7 +587,7 @@ int main()
     glClearColor(0, 0, 0, 1);
     if (USE_GLSL) program = CompileProgram(VertShaderGLSL(), FragShaderGLSL());
     else program = CompileProgram(VertShaderCG(), FragShaderCG());
-    projection = ortho(0.0f, float(WINDOW_WIDTH), 0.0f, float(WINDOW_HEIGHT), -1.0f, 1.0f);
+    projection = glm::ortho(0.0f, float(WINDOW_WIDTH), 0.0f, float(WINDOW_HEIGHT), -1.0f, 1.0f);
     SetupBuffers();
     
     // init input
