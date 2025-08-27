@@ -13,7 +13,6 @@ include("${VITASDK}/share/vita.cmake" REQUIRED)
 
 set(VITA_APP_NAME "simulation")
 set(VITA_TITLEID  "PSVSPHSIM")
-set(VITA_VERSION  "01.00")
 
 # compiler flags
 set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -std=c11 -O3 -ftree-vectorize")
