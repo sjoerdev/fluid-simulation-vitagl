@@ -1,4 +1,4 @@
-VPK=simulation.vpk
+VPK=VitaSPH.vpk
 IP=192.168.1.162
 
 cmake .

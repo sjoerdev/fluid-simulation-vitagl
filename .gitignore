@@ -7,8 +7,8 @@ Makefile
 # build files
 eboot.bin
 eboot.bin.out
-simulation
-simulation.velf
-simulation.vpk
-simulation.vpk.out
-simulation.vpk_param.sfo
+VitaSPH
+VitaSPH.velf
+VitaSPH.vpk
+VitaSPH.vpk.out
+VitaSPH.vpk_param.sfo

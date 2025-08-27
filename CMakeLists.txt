@@ -8,11 +8,12 @@ if(NOT DEFINED CMAKE_TOOLCHAIN_FILE)
   endif()
 endif()
 
-project(simulation)
+project(VitaSPH)
 include("${VITASDK}/share/vita.cmake" REQUIRED)
 
-set(VITA_APP_NAME "simulation")
+set(VITA_APP_NAME "VitaSPH")
 set(VITA_TITLEID  "PSVSPHSIM")
+set(VITA_VERSION  "01.00")
 
 # compiler flags
 set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -std=c11 -O3 -ftree-vectorize")
@@ -51,5 +52,12 @@ target_link_libraries(${PROJECT_NAME}
   z
 )
 
+# create binary
 vita_create_self(eboot.bin ${PROJECT_NAME})
-vita_create_vpk(${PROJECT_NAME}.vpk ${VITA_TITLEID} eboot.bin VERSION ${VITA_VERSION} NAME ${VITA_APP_NAME})
+
+# create vpk
+vita_create_vpk(${PROJECT_NAME}.vpk ${VITA_TITLEID} eboot.bin
+  VERSION ${VITA_VERSION}
+  NAME ${VITA_APP_NAME}
+  FILE sce_sys/icon0.png sce_sys/icon0.png
+)
