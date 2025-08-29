@@ -1,1 +1,1 @@
-echo destroy | nc 192.168.1.162 1338
+echo destroy | nc 192.168.1.163 1338

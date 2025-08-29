@@ -1,5 +1,5 @@
 VPK=VitaSPH.vpk
-IP=192.168.1.162
+IP=192.168.1.163
 
 cmake .
 
