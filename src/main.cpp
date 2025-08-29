@@ -395,14 +395,22 @@ void vitagl_display_callback(void *framebuf)
     vitagl_display_framebuf = (uint32_t*)framebuf;
     
     std::string first = "particles: " + std::to_string(particles.size()) + " / " + std::to_string(MAX_PARTICLES);
-    vgl_draw_string_anchored(0, 0, first.c_str(), 2, 1);
+    vgl_draw_string_anchored(0, 0, first.c_str(), 2, 2);
 
     std::string useglsl = USE_GLSL ? "true" : "false";
     std::string second = "using glsl: " + useglsl;
-    vgl_draw_string_anchored(0, 1, second.c_str(), 2, 1);
+    vgl_draw_string_anchored(0, 1, second.c_str(), 2, 2);
 
     std::string third = "threads: " + std::to_string(pool.get_active_threads());
-    vgl_draw_string_anchored(0, 2, third.c_str(), 2, 1);
+    vgl_draw_string_anchored(0, 2, third.c_str(), 2, 2);
+
+    // controls
+    std::string aa = "move particles: hold touch screen";
+    std::string ab = "add particles: press cross [x]";
+    std::string ac = "reset sim: press circle [o]";
+    vgl_draw_string_anchored(0, 0, aa.c_str(), 2, 0);
+    vgl_draw_string_anchored(0, 1, ab.c_str(), 2, 0);
+    vgl_draw_string_anchored(0, 2, ac.c_str(), 2, 0);
 }
 
 GLuint CompileShader(std::string source, GLenum type)
