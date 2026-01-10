@@ -4,13 +4,7 @@ This is an SPH fluid simulation for the vita.
 
 ## Showcase:
 
-<!-- github video format -->
 [](https://github.com/user-attachments/assets/a05789b8-3cdc-4c62-8b07-8e2bfecd9748)
-
-<!-- html video format -->
-<video width="100%" controls>
-    <source src="https://github.com/user-attachments/assets/a05789b8-3cdc-4c62-8b07-8e2bfecd9748">
-</video>
 
 ## Building:
 
